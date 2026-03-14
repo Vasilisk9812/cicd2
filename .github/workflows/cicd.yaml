@@ -18,21 +18,56 @@ jobs:
 
       - name: Проверка линтером Flake8
         run: flake8 app.py
-
+          
       - name: Проверка линтером MyPy
         run: mypy app.py
-        
+
+  building:
+    name: Сборка образа для Docker-контейнера
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    needs: testing
+    steps:
+      - name: Клонирование репозитория
+        uses: actions/checkout@v6
+
+      - name: Вход в GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Получаем имя репозитория в GitHub Container Registry
+        uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}
+
+      - name: Сборка и публикация образа контейнера
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+  
   deploy:
-      name: Развертывание на сервере
-      runs-on: ubuntu-latest
-      steps:
-        - name: Подключение к серверу
-          uses: appleboy/ssh-action@v1
-          with:
-            host: ${{ secrets.SSH_HOST }}
-            username: student
-            key: ${{ secrets.SSH_KEY }}
-            passphrase: 123
-            script: |
-              whoami
-              hostname
+    name: Развертывание на сервере
+    runs-on: ubuntu-latest
+    needs: building
+    steps:
+      - name: Подключение к серверу
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: student
+          key: ${{ secrets.SSH_KEY }}
+          passphrase: 123
+          script: |
+            cd /home/student/mikhailov
+            docker compose down
+            docker compose pull
+            docker compose up --detach
